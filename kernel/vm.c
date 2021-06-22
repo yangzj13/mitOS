@@ -47,6 +47,59 @@ kvminit()
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+pagetable_t
+ukvminit()
+{
+  pagetable_t pagetable = (pagetable_t)kalloc();
+  if (pagetable == 0) {
+    return 0;
+  }
+  memset(pagetable, 0, PGSIZE);
+  for (int i = 1; i < 512; i++) {
+    pagetable[i] = kernel_pagetable[i];
+  }
+  // uart registers
+  if (mappages(pagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W) < 0) {
+    freeukvm(pagetable);
+    return 0;
+  }
+  // virtio mmio disk interface
+  if (mappages(pagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) < 0) {
+    freeukvm(pagetable);
+    return 0;
+  }
+
+  // CLINT
+  if (mappages(pagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W) < 0) {
+    freeukvm(pagetable);   
+    return 0;
+  }
+
+  // PLIC
+  if (mappages(pagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W) < 0) {
+    freeukvm(pagetable);   
+    return 0;
+  }
+
+  return pagetable;
+}
+
+void
+freeukvm(pagetable_t pagetable)
+{
+  pagetable_t level1 = (pagetable_t)PTE2PA(pagetable[0]);
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = level1[i];
+    if ((pte & PTE_V)) {
+      uint64 level2 = PTE2PA(pte);
+      kfree((void *)level2);
+      level1[i]=0;
+    }
+  }
+  kfree((void *)level1);
+  kfree((void *)pagetable);
+}
+
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void
@@ -439,4 +492,29 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void
+r_vmprint(pagetable_t pagetable, int d)
+{
+  for (int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if (pte & PTE_V){
+      printf("..");
+      for (int j = 0; j < d; j++) printf(" ..");
+      uint64 child = PTE2PA(pte);
+      printf("%d: pte %p pa %p\n", i, pte, child);
+      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+        // this PTE points to a lower-level page table
+        r_vmprint((pagetable_t)child, d+1);
+      } 
+    }
+  }
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  r_vmprint(pagetable, 0);
 }
