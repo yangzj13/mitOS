@@ -230,8 +230,6 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
-  kvmmapuser(p->pid, p->kpagetable, p->pagetable, p->sz, 0);
-
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -240,6 +238,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+  kvmmapuser(p->pid, p->kpagetable, p->pagetable, p->sz, 0);
 
   release(&p->lock);
 }
@@ -309,6 +308,7 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+
   kvmmapuser(np->pid, np->kpagetable, np->pagetable, np->sz, 0);
 
   release(&np->lock);
