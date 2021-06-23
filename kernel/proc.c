@@ -230,6 +230,8 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  kvmmapuser(p->pid, p->kpagetable, p->pagetable, p->sz, 0);
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -251,6 +253,9 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
+
+  if (sz + n >= PLIC) 
+    return -1;
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
@@ -258,6 +263,7 @@ growproc(int n)
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+  kvmmapuser(p->pid, p->kpagetable, p->pagetable, sz, p->sz);
   p->sz = sz;
   return 0;
 }
@@ -303,6 +309,7 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+  kvmmapuser(np->pid, np->kpagetable, np->pagetable, np->sz, 0);
 
   release(&np->lock);
 

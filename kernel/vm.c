@@ -69,11 +69,11 @@ ukvminit()
     return 0;
   }
 
-  // CLINT
-  if (mappages(pagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W) < 0) {
-    freeukvm(pagetable);   
-    return 0;
-  }
+  // // CLINT
+  // if (mappages(pagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W) < 0) {
+  //   freeukvm(pagetable);   
+  //   return 0;
+  // }
 
   // PLIC
   if (mappages(pagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W) < 0) {
@@ -432,6 +432,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+  return copyin_new(pagetable, dst, srcva, len);
   uint64 n, va0, pa0;
 
   while(len > 0){
@@ -458,6 +459,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
+  return copyinstr_new(pagetable, dst, srcva, max);
   uint64 n, va0, pa0;
   int got_null = 0;
 
@@ -517,4 +519,34 @@ vmprint(pagetable_t pagetable)
 {
   printf("page table %p\n", pagetable);
   r_vmprint(pagetable, 0);
+}
+
+void
+kvmmapuser(int pid, pagetable_t kpagetable, pagetable_t upagetable, uint64 newsize, uint64 oldsize)
+{
+  uint64 va;
+  pte_t *upte, *kpte;
+
+  if (newsize >= PLIC)
+    panic("kvmmapuser: newsz too large");
+  
+  for (va=oldsize; va < newsize; va+=PGSIZE) {
+    upte = walk(upagetable, va, 0);
+    if (upte == 0) {
+      panic("kvmmapuser: no upte");
+    }
+    if ((*upte & PTE_V) == 0) {
+      panic("kvmmapuser: upte not valid");
+    }
+    kpte = walk(kpagetable, va, 1);
+    if (kpte == 0) {
+      panic("kvmmapuser: no kpte");
+    }
+    *kpte = *upte & ~(PTE_U & PTE_W & PTE_X);
+  }
+
+  for (va=newsize; va < oldsize; va+=PGSIZE) {
+    kpte = walk(kpagetable, va, 0);
+    *kpte &= ~PTE_V;
+  }
 }
